@@ -3,7 +3,9 @@ from setuptools import setup, find_packages
 setup(
     name="text-cleaner-pro",
     version="1.0.0",
-    packages=find_packages(),
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
+    py_modules=["main"],
     install_requires=[
         "opencv-python>=4.5.0",
         "easyocr>=1.6.0",

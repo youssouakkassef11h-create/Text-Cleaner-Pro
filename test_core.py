@@ -4,9 +4,13 @@ import numpy as np
 import os
 from pathlib import Path
 
-from src.core.text_detector import TextDetector
-from src.core.mask_generator import MaskGenerator
-from src.core.image_cleaner import ImageCleaner
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+
+from text_cleaner_pro.core.image_cleaner import ImageCleaner
+from text_cleaner_pro.core.mask_generator import MaskGenerator
+from text_cleaner_pro.core.text_detector import TextDetector
 
 class TestCoreFunctions(unittest.TestCase):
     def setUp(self):
@@ -24,7 +28,7 @@ class TestCoreFunctions(unittest.TestCase):
     
     def test_text_detection(self):
         detector = TextDetector(languages=['en'])
-        detections = detector.detect_text(self.test_image_path, confidence=0.1)
+        detections = detector.detect_text(self.test_image_path, confidence_threshold=0.1)
         self.assertGreater(len(detections), 0, "Should detect at least one text region")
     
     def test_mask_generation(self):
@@ -44,10 +48,22 @@ class TestCoreFunctions(unittest.TestCase):
         mask = np.zeros((100, 100), dtype=np.uint8)
         mask[10:50, 10:50] = 255
         
-        cleaner = ImageCleaner()
-        cleaned_image = cleaner.clean_image(self.test_image, mask)
-        
-        self.assertEqual(cleaned_image.shape, self.test_image.shape, "Cleaned image should have same shape as original")
+        # Test with default TELEA algorithm
+        cleaner_telea = ImageCleaner(inpaint_algorithm='TELEA', inpaint_radius=5)
+        cleaned_image_telea = cleaner_telea.clean_image(self.test_image, mask)
+        self.assertEqual(cleaned_image_telea.shape, self.test_image.shape)
+
+        # Test with NS algorithm
+        cleaner_ns = ImageCleaner(inpaint_algorithm='NS', inpaint_radius=5)
+        cleaned_image_ns = cleaner_ns.clean_image(self.test_image, mask)
+        self.assertEqual(cleaned_image_ns.shape, self.test_image.shape)
+
+        # Test whitening method
+        cleaner_white = ImageCleaner(method='white')
+        cleaned_image_white = cleaner_white.clean_image(self.test_image, mask)
+        self.assertEqual(cleaned_image_white.shape, self.test_image.shape)
+        # Check if the masked area is white
+        self.assertTrue(np.all(cleaned_image_white[mask>0] == [255,255,255]))
 
 if __name__ == '__main__':
     unittest.main()
