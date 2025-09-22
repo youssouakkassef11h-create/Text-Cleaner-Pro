@@ -1,13 +1,15 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import cv2
-from PIL import Image, ImageTk
 import os
 from pathlib import Path
 
-from src.core.text_detector import TextDetector
-from src.core.mask_generator import MaskGenerator
-from src.core.image_cleaner import ImageCleaner
+import cv2
+import numpy as np
+from PIL import Image, ImageTk
+
+from text_cleaner_pro.core.image_cleaner import ImageCleaner
+from text_cleaner_pro.core.mask_generator import MaskGenerator
+from text_cleaner_pro.core.text_detector import TextDetector
 
 class TextCleanerGUI:
     def __init__(self, root):
@@ -37,7 +39,9 @@ class TextCleanerGUI:
         ttk.Button(control_frame, text="تحميل صورة", command=self.load_image).grid(row=0, column=0, padx=5)
         ttk.Button(control_frame, text="اكتشاف النصوص", command=self.detect_text).grid(row=0, column=1, padx=5)
         ttk.Button(control_frame, text="تنظيف الصورة", command=self.clean_image).grid(row=0, column=2, padx=5)
-        ttk.Button(control_frame, text="حفظ النتيجة", command=self.save_image).grid(row=0, column=3, padx=5)
+        ttk.Button(control_frame, text="اكتشاف وتنظيف", command=self.detect_and_clean).grid(row=0, column=3, padx=5)
+        ttk.Button(control_frame, text="حفظ النتيجة", command=self.save_image).grid(row=0, column=4, padx=5)
+        ttk.Button(control_frame, text="معالجة مجلد", command=self.batch_clean_folder).grid(row=0, column=5, padx=5)
         
         # إطار الإعدادات
         settings_frame = ttk.LabelFrame(main_frame, text="الإعدادات", padding="10")
@@ -61,6 +65,23 @@ class TextCleanerGUI:
         method_combo = ttk.Combobox(settings_frame, textvariable=self.method_var, 
                                    values=["inpaint", "white"], width=10, state="readonly")
         method_combo.grid(row=0, column=6, padx=5)
+
+        self.gpu_var = tk.BooleanVar()
+        ttk.Checkbutton(settings_frame, text="استخدام الـ GPU", variable=self.gpu_var).grid(row=0, column=7, padx=(20, 0))
+
+        # خوارزمية التنظيف
+        ttk.Label(settings_frame, text="خوارزمية التنظيف:").grid(row=1, column=0, sticky=tk.W, pady=(10,0))
+        self.inpaint_algo_var = tk.StringVar(value="TELEA")
+        inpaint_algo_combo = ttk.Combobox(settings_frame, textvariable=self.inpaint_algo_var,
+                                          values=["TELEA", "NS"], width=10, state="readonly")
+        inpaint_algo_combo.grid(row=1, column=1, padx=5, pady=(10,0))
+
+        # نصف قطر التنظيف
+        ttk.Label(settings_frame, text="نصف قطر التنظيف:").grid(row=1, column=2, sticky=tk.W, padx=(20, 0), pady=(10,0))
+        self.inpaint_radius_var = tk.IntVar(value=3)
+        ttk.Scale(settings_frame, from_=1, to=20, variable=self.inpaint_radius_var,
+                 orient=tk.HORIZONTAL, length=100).grid(row=1, column=3, padx=5, pady=(10,0))
+        ttk.Label(settings_frame, textvariable=self.inpaint_radius_var).grid(row=1, column=4, pady=(10,0))
         
         # إطار الصور
         images_frame = ttk.Frame(main_frame)
@@ -114,8 +135,8 @@ class TextCleanerGUI:
             
         try:
             languages = [lang.strip() for lang in self.languages_var.get().split(',')]
-            detector = TextDetector(languages=languages)
-            self.detections = detector.detect_text(self.image_path, self.confidence_var.get())
+            detector = TextDetector(languages=languages, gpu=self.gpu_var.get())
+            self.detections = detector.detect_text(self.image_path, confidence_threshold=self.confidence_var.get())
             
             # رسم المربعات حول النصوص المكتشفة
             image_with_boxes = self.original_image.copy()
@@ -143,7 +164,11 @@ class TextCleanerGUI:
             
         try:
             mask_generator = MaskGenerator()
-            cleaner = ImageCleaner(method=self.method_var.get())
+            cleaner = ImageCleaner(
+                method=self.method_var.get(),
+                inpaint_radius=self.inpaint_radius_var.get(),
+                inpaint_algorithm=self.inpaint_algo_var.get()
+            )
             
             mask = mask_generator.create_mask(self.original_image.shape, self.detections)
             self.cleaned_image = cleaner.clean_image(self.original_image, mask)
@@ -197,3 +222,101 @@ class TextCleanerGUI:
     def add_info(self, message):
         self.info_text.insert(tk.END, message + "\n")
         self.info_text.see(tk.END)
+
+    def detect_and_clean(self):
+        if self.original_image is None:
+            messagebox.showwarning("تحذير", "يرجى تحميل صورة أولاً")
+            return
+
+        self.add_info("بدء عملية الاكتشاف والتنظيف...")
+        self.root.update_idletasks()
+
+        try:
+            # Step 1: Detect text (without updating the left canvas with boxes)
+            languages = [lang.strip() for lang in self.languages_var.get().split(',')]
+            detector = TextDetector(languages=languages, gpu=self.gpu_var.get())
+            self.detections = detector.detect_text(self.image_path, confidence_threshold=self.confidence_var.get())
+
+            if not self.detections:
+                self.add_info("لم يتم العثور على نصوص. لا يوجد شيء لتنظيفه.")
+                messagebox.showinfo("معلومات", "لم يتم العثور على نصوص في الصورة.")
+                return
+
+            self.add_info(f"تم اكتشاف {len(self.detections)} نص.")
+            self.root.update_idletasks()
+
+            # Step 2: Clean image
+            mask_generator = MaskGenerator()
+            cleaner = ImageCleaner(
+                method=self.method_var.get(),
+                inpaint_radius=self.inpaint_radius_var.get(),
+                inpaint_algorithm=self.inpaint_algo_var.get()
+            )
+
+            mask = mask_generator.create_mask(self.original_image.shape, self.detections)
+            self.cleaned_image = cleaner.clean_image(self.original_image, mask)
+
+            self.display_image(self.cleaned_image, self.cleaned_canvas)
+            self.add_info("اكتمل التنظيف بنجاح.")
+
+        except Exception as e:
+            messagebox.showerror("خطأ", f"فشل في عملية الاكتشاف والتنظيف: {str(e)}")
+            self.add_info(f"❌ حدث خطأ: {e}")
+
+    def batch_clean_folder(self):
+        input_dir = filedialog.askdirectory(title="اختر مجلد الصور")
+        if not input_dir:
+            return
+
+        output_dir = filedialog.askdirectory(title="اختر مجلد لحفظ النتائج")
+        if not output_dir:
+            return
+
+        input_dir = Path(input_dir)
+        output_dir = Path(output_dir)
+
+        supported_formats = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
+        image_files = sorted([f for f in input_dir.iterdir() if f.suffix.lower() in supported_formats])
+
+        if not image_files:
+            messagebox.showinfo("معلومات", "لم يتم العثور على صور في المجلد المحدد.")
+            return
+
+        self.add_info(f"بدء معالجة {len(image_files)} صورة من المجلد: {input_dir}")
+
+        try:
+            languages = [lang.strip() for lang in self.languages_var.get().split(',')]
+            detector = TextDetector(languages=languages, gpu=self.gpu_var.get())
+            mask_generator = MaskGenerator()
+            cleaner = ImageCleaner(
+                method=self.method_var.get(),
+                inpaint_radius=self.inpaint_radius_var.get(),
+                inpaint_algorithm=self.inpaint_algo_var.get()
+            )
+
+            for i, img_path in enumerate(image_files):
+                self.add_info(f"({i+1}/{len(image_files)}) جاري معالجة: {img_path.name}")
+                self.root.update_idletasks() # Update GUI
+
+                image = cv2.imread(str(img_path))
+                if image is None:
+                    self.add_info(f"تحذير: تعذر تحميل الصورة {img_path.name}")
+                    continue
+
+                detections = detector.detect_text(str(img_path), confidence_threshold=self.confidence_var.get())
+                if not detections:
+                    self.add_info(f"لم يتم العثور على نصوص في {img_path.name}. سيتم نسخ الصورة كما هي.")
+                    cleaned_image = image
+                else:
+                    mask = mask_generator.create_mask(image.shape, detections)
+                    cleaned_image = cleaner.clean_image(image, mask)
+
+                output_path = output_dir / img_path.name
+                cv2.imwrite(str(output_path), cleaned_image)
+
+            self.add_info("🎉 اكتملت معالجة الدفعة بنجاح!")
+            messagebox.showinfo("اكتملت المعالجة", "تم تنظيف جميع الصور بنجاح.")
+
+        except Exception as e:
+            messagebox.showerror("خطأ فادح", f"حدث خطأ أثناء معالجة الدفعة: {e}")
+            self.add_info(f"❌ حدث خطأ فادح: {e}")
