@@ -1,0 +1,53 @@
+
+## 🔟 ملف `test_plan.yaml` لـ TestSprite
+
+```yaml
+version: "1.0"
+project: "Text Cleaner Pro"
+
+suites:
+  - name: "CLI Tests"
+    tests:
+      - name: "Show help"
+        command: "python cli.py --help"
+        expect:
+          - "Usage"
+          - "clean"
+          - "batch-clean"
+
+      - name: "Clean single image with English text"
+        command: "python cli.py clean tests/sample.jpg --output tests/sample_cleaned.jpg --languages en --confidence 0.5"
+        expect:
+          - "✅ تم حفظ الصورة المنظفة"
+        files:
+          - "tests/sample_cleaned.jpg"
+
+      - name: "Clean single image with Arabic text"
+        command: "python cli.py clean tests/sample_ar.jpg --output tests/sample_ar_cleaned.jpg --languages ar --confidence 0.5"
+        expect:
+          - "✅ تم حفظ الصورة المنظفة"
+        files:
+          - "tests/sample_ar_cleaned.jpg"
+
+  - name: "GUI Tests"
+    tests:
+      - name: "Launch GUI"
+        command: "python main.py --gui"
+        timeout: 10
+        expect:
+          - "🚀 تشغيل الواجهة الرسومية"
+
+  - name: "Unit Tests"
+    tests:
+      - name: "Run core tests"
+        command: "python -m pytest tests/test_core.py -v"
+        expect:
+          - "passed"
+          - "test_text_detection"
+          - "test_mask_generation"
+
+      - name: "Run CLI tests"
+        command: "python -m pytest tests/test_cli.py -v"
+        expect:
+          - "passed"
+          - "test_cli_help"

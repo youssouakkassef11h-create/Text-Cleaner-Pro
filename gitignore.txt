@@ -1,0 +1,40 @@
+# بيئة بايثون
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# بيئات افتراضية
+.env
+.venv
+env/
+venv/
+ENV/
+
+# نظام التشغيل
+.DS_Store
+Thumbs.db
+
+# الملفات المؤقتة
+*.tmp
+*.temp
+
+# الملفات المنشأة من التطبيق
+*.cleaned.jpg
+output/
